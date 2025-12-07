@@ -1,0 +1,19 @@
+# Virtual environment
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+
+# Output files
+routes_map.html
+
+# Keys (important for security)
+config.py
+*.env
