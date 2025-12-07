@@ -17,3 +17,4 @@ routes_map.html
 # Keys (important for security)
 config.py
 *.env
+cache/
