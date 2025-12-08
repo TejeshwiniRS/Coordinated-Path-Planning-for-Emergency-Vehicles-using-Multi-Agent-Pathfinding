@@ -11,17 +11,22 @@ from ors_client import (
 )
 from graph_builder import build_abstract_graph_from_routes
 from astar_planner import astar_shortest_path
-from cbs import Agent, cbs_plan
+from prioritized_planner import Agent, prioritized_plan
 from dstar_lite import SimpleDStarLite
 from route_planner import build_cbs_routes
 from simulation import simulate_routes
 from visualizer import render_map
+import webbrowser
+# import web_serve
+import subprocess
+import time
+
 
 
 def read_float(prompt: str) -> float:
     while True:
         try:
-            return float(input(prompt))
+            return float(prompt and input(prompt))
         except ValueError:
             print("Invalid input. Please enter a numeric value (e.g., 44.9697, -93.2223).")
 
@@ -39,7 +44,8 @@ def read_vehicle_input() -> List[Vehicle]:
 
 
 def main():
-    print("\n=== Emergency Vehicle MAPF with A*, CBS, D*-Lite (ORS Geometry + Abstract Graph) ===")
+    print("\n=== Emergency Vehicle MAPF with A*, Prioritized Planning, D*-Lite "
+          "(ORS Geometry + Abstract Graph) ===")
 
     print("\nEnter Accident Location:")
     acc_lat = read_float("Accident latitude: ")
@@ -72,7 +78,8 @@ def main():
         return
 
     # 2) Build a small abstract graph from downsampled ORS routes
-    G, vehicle_way_nodes = build_abstract_graph_from_routes(polylines, target_waypoints=8)
+    # Feel free to tweak target_waypoints (e.g., 3–6) for performance/realism trade-off
+    G, vehicle_way_nodes = build_abstract_graph_from_routes(polylines, target_waypoints=5)
     print(
         f"\nAbstract graph built: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges."
     )
@@ -90,20 +97,39 @@ def main():
             continue
         print(f"{v.name}: A* steps={len(path_nodes)}, abstract time={time_s:.1f} units")
 
-    # 4) CBS multi-agent planning
-    print("\n=== CBS Coordinated Paths (Abstract Graph) ===")
+    # 4) Prioritized multi-agent planning (replaces CBS)
+    print("\n=== Prioritized Coordinated Paths (Abstract Graph) ===")
     agents: List[Agent] = []
     for v in vehicles:
         if v.name in vehicle_way_nodes:
             nodes_seq = vehicle_way_nodes[v.name]
             agents.append(Agent(name=v.name, start=nodes_seq[0], goal=nodes_seq[-1]))
 
-    cbs_paths = cbs_plan(G, agents, max_t=100)
+    if not agents:
+        print("No agents with valid abstract start/goal. Exiting.")
+        return
+
+    # Priority: shorter ORS duration first (or change policy: ambulance > fire > police etc.)
+    priority_order = sorted(
+        [a.name for a in agents],
+        key=lambda name: summaries[name][1] if name in summaries else float("inf"),
+    )
+
+    # max_t should be "enough" for agents to reach the goal; tweak as needed
+    coop_paths = prioritized_plan(G, agents, priority_order=priority_order, max_t=50)
+    for v in vehicles:
+        if v.name not in coop_paths:
+            print(f"{v.name}: already at accident site (no movement needed).")
+            coop_paths[v.name] = [vehicle_way_nodes.get(v.name, [None])[0] or 0]
 
     for v in vehicles:
-        p = cbs_paths[v.name]
+        if v.name not in coop_paths:
+            continue
+        p = coop_paths[v.name]
+        # just re-use ORS duration as “scaled time” like before
+        est_minutes = summaries[v.name][1] / 60.0 if v.name in summaries else 0.0
         print(
-            f"{v.name}: CBS steps={len(p)}, scaled time≈{summaries[v.name][1]/60:.2f} min"
+            f"{v.name}: Coordinated steps={len(p)}, scaled time≈{est_minutes:.2f} min"
         )
 
     # 5) D*-Lite-style replanning demo for first agent
@@ -129,20 +155,34 @@ def main():
         else:
             print("No outgoing edges to block for D*-Lite demo.")
 
-    # 6) Build CBS-based Route objects for simulation+visualization
+    # 6) Build Route objects using the coordinated abstract paths
+    # build_cbs_routes only cares that it gets a dict[name] -> [node_ids over time]
     ors_durations_s = {name: dur for name, (_, dur) in summaries.items()}
-    cbs_routes: List[Route] = build_cbs_routes(G, vehicles, cbs_paths, ors_durations_s)
+    cbs_routes: List[Route] = build_cbs_routes(G, vehicles, coop_paths, ors_durations_s)
 
     # 7) Simulate for conflicts on continuous coordinates
     simulate_routes(cbs_routes, time_step_s=1.0, conflict_distance_m=10.0)
 
     # 8) Visualize on Folium and open browser
-    print("\nGenerating interactive Folium map (CBS routes on abstract waypoints)...")
+    print("\nGenerating interactive Folium map (coordinated routes on abstract waypoints)...")
     html_path = render_map(cbs_routes, accident, output_html="routes_map.html", accel=10.0)
-    print(f"Map saved to {html_path}, opening in browser...")
-    webbrowser.open(html_path)
+    # Serve the map
+    port = 5500
+    html_path = "routes_map.html"
 
-    print("\nDone.")
+    print(f"Starting map server on port {port}...")
+
+    # Launch server as SEPARATE PROCESS (fixes VS Code issues)
+    server_process = subprocess.Popen(
+        ["python3", "serve_map.py", str(port), html_path]
+    )
+
+    # Wait a moment for server to start
+    time.sleep(1)
+
+    url = f"http://localhost:{port}/{html_path}"
+    print(f"Opening {url} ...")
+    webbrowser.open(url)
 
 
 if __name__ == "__main__":
