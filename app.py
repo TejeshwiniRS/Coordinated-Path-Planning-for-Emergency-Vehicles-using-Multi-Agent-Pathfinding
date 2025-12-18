@@ -184,5 +184,6 @@ def map_view():
 
 
 if __name__ == "__main__":
-    # Run Flask dev server
-    app.run(host="0.0.0.0", port=5500, debug=True)
+    # Use PORT from environment variable, default to 5500 if running locally
+    port = int(os.environ.get("PORT", 5500))
+    app.run(host="0.0.0.0", port=port)
