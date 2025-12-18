@@ -13,7 +13,7 @@ from ors_client import (
 from graph_builder import build_abstract_graph_from_routes
 from astar_planner import astar_shortest_path
 from prioritized_planner import Agent, prioritized_plan
-from dstar_lite import SimpleDStarLite
+from dstar_lite import DStarLite
 from route_planner import build_cbs_routes
 from simulation import simulate_routes
 from visualizer import render_map
@@ -107,16 +107,16 @@ def run_pipeline(acc_lat: float, acc_lon: float, vehicles_in: List[dict]):
     dstar_info = {}
     if agents:
         a0 = agents[0]
-        dstar = SimpleDStarLite(G, a0.start, a0.goal)
+        dstar = DStarLite(G, a0.start, a0.goal)
         dstar_info["vehicle"] = a0.name
         dstar_info["initial_len"] = len(dstar.path_nodes)
         # take a couple of steps then block one edge and replan
         for _ in range(2):
             dstar.step()
-        nbrs = list(G.successors(dstar.current))
+        nbrs = list(G.successors(dstar.start))
         if nbrs:
             blocked = nbrs[0]
-            dstar.block_edge_and_replan(dstar.current, blocked)
+            dstar.block_edge_and_replan(dstar.start, blocked)
             dstar_info["replanned_len"] = len(dstar.path_nodes)
         else:
             dstar_info["replanned_len"] = dstar_info["initial_len"]

@@ -12,7 +12,7 @@ from ors_client import (
 from graph_builder import build_abstract_graph_from_routes
 from astar_planner import astar_shortest_path
 from prioritized_planner import Agent, prioritized_plan
-from dstar_lite import SimpleDStarLite
+from dstar_lite import DStarLite
 from route_planner import build_cbs_routes
 from simulation import simulate_routes
 from visualizer import render_map
@@ -136,7 +136,7 @@ def main():
     if agents:
         print("\n=== D*-Lite-style Replanning Demo (Abstract Graph) ===")
         a0 = agents[0]
-        dstar = SimpleDStarLite(G, a0.start, a0.goal)
+        dstar = DStarLite(G, a0.start, a0.goal)
         print(
             f"{a0.name}: initial A* path (first nodes) = {dstar.path_nodes[:6]} "
             f"(len={len(dstar.path_nodes)})"
@@ -144,10 +144,10 @@ def main():
         for i in range(2):
             cur = dstar.step()
             print(f"Step {i+1}: {a0.name} at node {cur}")
-        nbrs = list(G.successors(dstar.current))
+        nbrs = list(G.successors(dstar.start))
         if nbrs:
             blocked = nbrs[0]
-            dstar.block_edge_and_replan(dstar.current, blocked)
+            dstar.block_edge_and_replan(dstar.start, blocked)
             print(
                 f"{a0.name}: replanned path (first nodes) = {dstar.path_nodes[:6]} "
                 f"(len={len(dstar.path_nodes)})"
